@@ -1,2 +1,2 @@
 # cp-notif
-notifys cp contests
+notifies cp contests
