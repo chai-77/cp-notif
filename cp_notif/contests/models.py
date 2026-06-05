@@ -40,3 +40,14 @@ class Contest (models.Model):
         return f"{self.platform} - {self.name}"
     
 
+
+class ReminderRule(models.Model):
+    contest = models.ForeignKey("Contest", on_delete=models.CASCADE)
+
+    # when to send reminder (in minutes before contest starts)
+    offset_minutes = models.IntegerField()
+
+    label = models.CharField(max_length=20)  # "4d", "1h"
+
+    def __str__(self):
+        return f"{self.contest} - {self.label}"

@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 
-from contests.models import Contest
+from contests.models import Contest, ReminderRule
 from notifications.models import Notification
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -11,91 +11,47 @@ from django.core.mail import send_mail
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = "Send contest reminders"
 
     def handle(self, *args, **kwargs):
 
         now = timezone.now()
-        users = User.objects.all()
-        contests = Contest.objects.all()
 
-        sent_count = 0
+        rules = ReminderRule.objects.select_related("contest").all()
 
-        for contest in contests:
+        for rule in rules:
 
-            time_left = contest.start_time - now
+            contest = rule.contest
 
-            if time_left <= timedelta(0):
-                continue
+            send_time = contest.start_time - timedelta(minutes=rule.offset_minutes)
 
-            # 1 HOUR FIRST (more specific)
-            if time_left <= timedelta(hours=1):
+            # if it's time to send
+            if now >= send_time:
 
-                if not Notification.objects.filter(
+                if Notification.objects.filter(
                     contest=contest,
-                    stage="1h"
+                    stage=rule.label
                 ).exists():
+                    continue
 
-                    for user in users:
-                        if not user.email:
-                            continue
+                # send email
+                for user in User.objects.all():
+                    if not user.email:
+                        continue
 
-                        send_mail(
-                            subject=f"{contest.name} starts in 1 hour!",
-                            message=f"""
-Hi {user.username},
+                send_mail(
+                    subject=f"{contest.name} reminder ({rule.label})",
+                    message=f"""
+                Hi {user.username},
 
-Contest: {contest.name}
-Starts: {contest.start_time}
-Time left: 1 hour
+                Contest: {contest.name}
+                Starts at: {contest.start_time}
+                Reminder: {rule.label}
+                """,
+                    from_email="noreply@cpnotif.com",  # or None if configured in settings
+                    recipient_list=[user.email],
+                )
 
-Link: {contest.url}
-""",
-                            from_email=None,
-                            recipient_list=[user.email],
-                        )
-
-                    Notification.objects.create(
-                        contest=contest,
-                        stage="1h"
-                    )
-
-                    sent_count += 1
-
-            # 4 DAYS AFTER
-            elif time_left <= timedelta(days=4):
-
-                if not Notification.objects.filter(
+                Notification.objects.create(
                     contest=contest,
-                    stage="4d"
-                ).exists():
-
-                    for user in users:
-                        if not user.email:
-                            continue
-
-                        send_mail(
-                            subject=f"{contest.name} starts soon ",
-                            message=f"""
-Hi {user.username},
-
-Contest: {contest.name}
-Starts: {contest.start_time}
-Time left: < 4 days
-
-Link: {contest.url}
-""",
-                            from_email=None,
-                            recipient_list=[user.email],
-                        )
-
-                    Notification.objects.create(
-                        contest=contest,
-                        stage="4d"
-                    )
-
-                    sent_count += 1
-
-        self.stdout.write(
-            self.style.SUCCESS(f"Sent {sent_count} reminders")
-        )
+                    stage=rule.label
+                )
